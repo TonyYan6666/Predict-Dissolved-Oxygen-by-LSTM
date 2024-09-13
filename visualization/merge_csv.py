@@ -12,9 +12,9 @@ for folder in subfolders:
     site_number = os.path.basename(folder).split('.')[0]
 
     # 读取每个CSV文件
-    oxygen_path = os.path.join(folder, f'{site_number}.dissolvedoxygendo.Raw_Data.csv')
-    streamflow_path = os.path.join(folder, f'{site_number}.streamflow.Raw_Data.csv')
-    temperature_path = os.path.join(folder, f'{site_number}.watertemperature.Raw_Data.csv')
+    oxygen_path = os.path.join(folder, f'{site_number}.dissolvedoxygendo.Daily_Mean.csv')
+    streamflow_path = os.path.join(folder, f'{site_number}.streamflow.Daily_Mean.csv')
+    temperature_path = os.path.join(folder, f'{site_number}.watertemperature.Daily_Mean.csv')
 
     oxygen_df = pd.read_csv(oxygen_path, parse_dates=['Date Time'])
     streamflow_df = pd.read_csv(streamflow_path, parse_dates=['Date Time'])
@@ -29,8 +29,8 @@ for folder in subfolders:
     streamflow_df = streamflow_df[(streamflow_df['Date Time'] >= start_time) & (streamflow_df['Date Time'] <= end_time)]
     temperature_df = temperature_df[(temperature_df['Date Time'] >= start_time) & (temperature_df['Date Time'] <= end_time)]
 
-    # 只保留‘Date Time’和‘VALUE’列
-    oxygen_df = oxygen_df[['Date Time', 'VALUE']].rename(columns={'VALUE': 'Oxygen'})
+    # 只保留‘Date Time’、‘VALUE’和‘quality’列，并重命名
+    oxygen_df = oxygen_df[['Date Time', 'VALUE', 'QUALITY']].rename(columns={'VALUE': 'Oxygen', 'quality': 'oxygen_quality'})
     streamflow_df = streamflow_df[['Date Time', 'VALUE']].rename(columns={'VALUE': 'Streamflow'})
     temperature_df = temperature_df[['Date Time', 'VALUE']].rename(columns={'VALUE': 'Temperature'})
 
