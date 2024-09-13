@@ -1,4 +1,4 @@
-Date Time,Oxygen,QUALITY,Streamflow,Temperature
+Date Time,Oxygen,oxygen_quality,Streamflow,Temperature
 2019-11-29,0.0,255,107.21,0.0
 2019-11-30,8.424,2,107.02,14.7
 2019-12-01,8.127,2,107.04,14.6

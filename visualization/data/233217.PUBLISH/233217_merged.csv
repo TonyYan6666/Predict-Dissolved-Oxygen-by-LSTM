@@ -1,4 +1,4 @@
-Date Time,Oxygen,QUALITY,Streamflow,Temperature
+Date Time,Oxygen,oxygen_quality,Streamflow,Temperature
 2014-09-09,9.722,2,164.06,13.8
 2014-09-10,9.364,2,150.48,13.8
 2014-09-11,9.134,2,139.69,13.8

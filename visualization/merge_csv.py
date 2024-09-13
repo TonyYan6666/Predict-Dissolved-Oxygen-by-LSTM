@@ -30,7 +30,7 @@ for folder in subfolders:
     temperature_df = temperature_df[(temperature_df['Date Time'] >= start_time) & (temperature_df['Date Time'] <= end_time)]
 
     # 只保留‘Date Time’、‘VALUE’和‘quality’列，并重命名
-    oxygen_df = oxygen_df[['Date Time', 'VALUE', 'QUALITY']].rename(columns={'VALUE': 'Oxygen', 'quality': 'oxygen_quality'})
+    oxygen_df = oxygen_df[['Date Time', 'VALUE', 'QUALITY']].rename(columns={'VALUE': 'Oxygen', 'QUALITY': 'oxygen_quality'})
     streamflow_df = streamflow_df[['Date Time', 'VALUE']].rename(columns={'VALUE': 'Streamflow'})
     temperature_df = temperature_df[['Date Time', 'VALUE']].rename(columns={'VALUE': 'Temperature'})
 

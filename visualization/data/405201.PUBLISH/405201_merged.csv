@@ -1,4 +1,4 @@
-Date Time,Oxygen,QUALITY,Streamflow,Temperature
+Date Time,Oxygen,oxygen_quality,Streamflow,Temperature
 2021-12-06,0.0,255,2892.21,19.6
 2021-12-07,8.724,3,2822.83,18.9
 2021-12-08,9.093,3,2629.56,17.5

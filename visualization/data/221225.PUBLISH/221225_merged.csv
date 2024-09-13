@@ -1,4 +1,4 @@
-Date Time,Oxygen,QUALITY,Streamflow,Temperature
+Date Time,Oxygen,oxygen_quality,Streamflow,Temperature
 2020-04-29,0.0,255,111.6,0.0
 2020-04-30,8.722,3,94.94,12.8
 2020-05-01,8.837,3,93.64,12.2

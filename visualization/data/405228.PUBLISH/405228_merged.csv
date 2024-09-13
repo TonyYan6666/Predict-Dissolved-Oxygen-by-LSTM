@@ -1,4 +1,4 @@
-Date Time,Oxygen,QUALITY,Streamflow,Temperature
+Date Time,Oxygen,oxygen_quality,Streamflow,Temperature
 2018-08-28,10.617,2,71.22,0.0
 2018-08-29,10.819,2,67.39,7.7
 2018-08-30,10.945,2,64.27,7.0

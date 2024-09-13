@@ -1,4 +1,4 @@
-Date Time,Oxygen,QUALITY,Streamflow,Temperature
+Date Time,Oxygen,oxygen_quality,Streamflow,Temperature
 2017-01-31,0.0,255,0.0,0.0
 2017-02-01,5.486,2,44.85,21.6
 2017-02-02,5.819,2,44.28,20.9
