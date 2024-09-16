@@ -1,166 +1,110 @@
 import pandas as pd
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
 import torch.nn as nn
-import torch.optim as optim
+from sklearn.preprocessing import MinMaxScaler
+from torch.utils.data import DataLoader, TensorDataset
 
+# 读取数据
+file_path = 'data_final.csv'
+data = pd.read_csv(file_path)
 
-# 数据预处理部分
-def preprocess_data(training_data, evaluation_data):
-    # 合并训练集和验证集的特征和标签
-    features = ['Streamflow', 'Temperature']
-    label = ['Oxygen']
+# 移除 Oxygen、Temperature 或 Streamflow 为 0 的行
+data_cleaned = data[(data['Oxygen'] != 0) & (data['Temperature'] != 0) & (data['Streamflow'] != 0)]
 
-    # 从训练集和验证集中提取特征和标签
-    train_features = training_data[features]
-    train_label = training_data[label]
-    eval_features = evaluation_data[features]
-    eval_label = evaluation_data[label]
+# 解析 'Date Time' 为 datetime 格式
+data_cleaned['Datetime'] = pd.to_datetime(data_cleaned['Date Time'])
 
-    # 对数转换
-    train_features_transformed = train_features.apply(lambda x: np.log10(x + 0.01))
-    train_label_transformed = train_label.apply(lambda x: np.log10(x + 0.01))
-    eval_features_transformed = eval_features.apply(lambda x: np.log10(x + 0.01))
-    eval_label_transformed = eval_label.apply(lambda x: np.log10(x + 0.01))
+# 按 'Datetime' 排序，然后按时间顺序进行80-20数据集分割
+data_cleaned = data_cleaned.sort_values(by='Datetime')
+split_index = int(len(data_cleaned) * 0.8)
+train_data = data_cleaned.iloc[:split_index]
+eval_data = data_cleaned.iloc[split_index:]
 
-    # 标准化（使用训练集的均值和标准差进行标准化）
-    train_features_standardized = (
-                                              train_features_transformed - train_features_transformed.mean()) / train_features_transformed.std()
-    train_label_standardized = (
-                                           train_label_transformed - train_label_transformed.mean()) / train_label_transformed.std()
+# 在每个数据集内按 'Site Number' 和 'Datetime' 排序，确保每个站点的数据是连续的
+train_data = train_data.sort_values(by=['Site Number', 'Datetime'])
+eval_data = eval_data.sort_values(by=['Site Number', 'Datetime'])
 
-    eval_features_standardized = (
-                                             eval_features_transformed - train_features_transformed.mean()) / train_features_transformed.std()
-    eval_label_standardized = (eval_label_transformed - train_label_transformed.mean()) / train_label_transformed.std()
+# 选择必要的列（Streamflow, Temperature 用作特征，Oxygen 用作预测目标）并归一化
+features = ['Streamflow', 'Temperature']  # 输入特征
+target = ['Oxygen']  # 预测目标
 
-    # 创建掩码，标记值为0的位置
-    train_feature_mask = (train_features == 0).astype(int)
-    train_label_mask = (train_label == 0).astype(int)
-    eval_feature_mask = (eval_features == 0).astype(int)
-    eval_label_mask = (eval_label == 0).astype(int)
+# 归一化数据（不包括 'Datetime' 和 'Site Number' 列）
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaled_train_data = scaler.fit_transform(train_data[features + target])
+scaled_eval_data = scaler.transform(eval_data[features + target])
 
-    return (train_features_standardized, train_label_standardized, train_feature_mask, train_label_mask), \
-        (eval_features_standardized, eval_label_standardized, eval_feature_mask, eval_label_mask)
+# 创建数据集函数
+def create_dataset(dataset, look_back=1):
+    X, Y = [], []
+    for i in range(len(dataset) - look_back - 1):
+        X.append(dataset[i:(i + look_back), :-1])  # 使用所有输入特征
+        Y.append(dataset[i + look_back, -1])  # 目标是氧气浓度
+    return np.array(X), np.array(Y)
 
+# 定义时间步长（例如，10 个时间步长）
+look_back = 10
+X_train, Y_train = create_dataset(scaled_train_data, look_back)
+X_eval, Y_eval = create_dataset(scaled_eval_data, look_back)
 
-# PyTorch Dataset类
-class TimeSeriesDataset(Dataset):
-    def __init__(self, features, labels, feature_mask, label_mask):
-        # 将数据转换为张量
-        self.features = torch.tensor(features.values, dtype=torch.float32)
-        self.labels = torch.tensor(labels.values, dtype=torch.float32)
-        self.feature_mask = torch.tensor(feature_mask.values, dtype=torch.float32)
-        self.label_mask = torch.tensor(label_mask.values, dtype=torch.float32)
+# 转换数据为 PyTorch 的张量
+X_train = torch.from_numpy(X_train).float()
+Y_train = torch.from_numpy(Y_train).float()
+X_eval = torch.from_numpy(X_eval).float()
+Y_eval = torch.from_numpy(Y_eval).float()
 
-    def __len__(self):
-        # 返回数据集的大小
-        return len(self.features)
+# 创建数据加载器
+train_loader = DataLoader(TensorDataset(X_train, Y_train), batch_size=32, shuffle=True)
+eval_loader = DataLoader(TensorDataset(X_eval, Y_eval), batch_size=32, shuffle=False)
 
-    def __getitem__(self, idx):
-        # 根据索引返回特征、标签和掩码
-        return self.features[idx], self.labels[idx], self.feature_mask[idx], self.label_mask[idx]
-
-
-# 定义一个简单的LSTM模型
+# 定义 LSTM 模型
 class LSTMModel(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
+    def __init__(self, input_size, hidden_size, num_layers, output_size):
         super(LSTMModel, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
-        # 初始化隐藏状态和细胞状态
-        h0 = torch.zeros(1, x.size(0), hidden_size).to(x.device)
-        c0 = torch.zeros(1, x.size(0), hidden_size).to(x.device)
-
-        # LSTM前向传播
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
         out, _ = self.lstm(x, (h0, c0))
-
-        # 全连接层
-        out = self.fc(out[:, -1, :])  # 取最后一个时间步的输出
+        out = self.fc(out[:, -1, :])
         return out
 
+# 设置模型参数
+input_size = len(features)  # 输入特征数量
+hidden_size = 50
+num_layers = 2
+output_size = 1
 
-# 自定义损失函数以支持掩码
-def masked_mse_loss(output, target, mask):
-    mask = mask.to(torch.bool)  # 将掩码转换为布尔类型
-    loss = ((output - target) ** 2)
-    loss = loss * mask  # 只计算非掩码区域的损失
-    return loss.sum() / mask.sum()  # 返回掩码区域的平均损失
-
-
-# 读取数据
-file_path = 'data_final.csv'  # 请替换为您的文件路径
-data = pd.read_csv(file_path)
-
-# 将 'Date Time' 列转换为日期时间格式
-data['Date Time'] = pd.to_datetime(data['Date Time'])
-
-# 找到80%分位数的日期作为划分点
-split_date = data['Date Time'].quantile(0.8)
-
-# 按日期划分数据集为训练集和验证集
-training_data = data[data['Date Time'] <= split_date]
-evaluation_data = data[data['Date Time'] > split_date]
-
-# 数据预处理
-(train_features_standardized, train_label_standardized, train_feature_mask, train_label_mask), \
-    (eval_features_standardized, eval_label_standardized, eval_feature_mask, eval_label_mask) = preprocess_data(
-    training_data, evaluation_data)
-
-# 创建 PyTorch 数据集
-train_dataset = TimeSeriesDataset(train_features_standardized, train_label_standardized, train_feature_mask,
-                                  train_label_mask)
-eval_dataset = TimeSeriesDataset(eval_features_standardized, eval_label_standardized, eval_feature_mask,
-                                 eval_label_mask)
-
-# 创建数据加载器
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-eval_loader = DataLoader(eval_dataset, batch_size=32, shuffle=False)
-
-# 设置参数
-input_size = len(['Streamflow', 'Temperature'])  # 输入特征数量
-hidden_size = 64  # 隐藏层大小
-output_size = 1  # 输出大小（氧气浓度）
-num_layers = 1  # LSTM层数
-
-# 实例化模型
-model = LSTMModel(input_size, hidden_size, output_size, num_layers)
-
-# 定义损失函数和优化器
-criterion = masked_mse_loss
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-
-# 检查是否有可用的GPU
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model.to(device)
+# 初始化模型、损失函数和优化器
+model = LSTMModel(input_size, hidden_size, num_layers, output_size)
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # 训练模型
-num_epochs = 10
+num_epochs = 50
 for epoch in range(num_epochs):
     model.train()
-    for features, labels, feature_mask, label_mask in train_loader:
-        # 将数据移动到GPU（如果可用）
-        features, labels, label_mask = features.to(device), labels.to(device), label_mask.to(device)
-
-        # 前向传播
-        outputs = model(features.unsqueeze(1))  # 将数据形状调整为 (batch_size, seq_len, input_size)
-        loss = criterion(outputs, labels, label_mask)
-
-        # 反向传播和优化
+    for X_batch, Y_batch in train_loader:
+        outputs = model(X_batch)
+        loss = criterion(outputs, Y_batch.unsqueeze(1))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-    print(f'Epoch [{epoch + 1}/{num_epochs}], Loss: {loss.item():.4f}')
+    # 验证模型
+    model.eval()
+    eval_loss = 0
+    with torch.no_grad():
+        for X_batch, Y_batch in eval_loader:
+            outputs = model(X_batch)
+            eval_loss += criterion(outputs, Y_batch.unsqueeze(1)).item()
+    eval_loss /= len(eval_loader)
 
-# 评估模型
-model.eval()
-with torch.no_grad():
-    for features, labels, feature_mask, label_mask in eval_loader:
-        features, labels, label_mask = features.to(device), labels.to(device), label_mask.to(device)
+    print(f'Epoch {epoch + 1}/{num_epochs}, Loss: {loss.item():.4f}, Eval Loss: {eval_loss:.4f}')
 
-        outputs = model(features.unsqueeze(1))  # 将数据形状调整为 (batch_size, seq_len, input_size)
-        loss = criterion(outputs, labels, label_mask)
-        print(f'Evaluation Loss: {loss.item():.4f}')
+# 保存模型
+torch.save(model.state_dict(), 'lstm_model.pth')
